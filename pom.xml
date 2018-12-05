@@ -11,12 +11,12 @@
 
     <groupId>com.alibaba</groupId>
     <artifactId>dubbo-registry-nacos</artifactId>
+    <version>2.6.5-SNAPSHOT</version>
 
     <properties>
         <dubbo.version>2.6.5</dubbo.version>
         <nacos.version>0.5.0</nacos.version>
     </properties>
-
 
     <dependencies>
 
@@ -24,12 +24,14 @@
             <groupId>com.alibaba</groupId>
             <artifactId>dubbo-registry-api</artifactId>
             <version>${dubbo.version}</version>
+            <optional>true</optional>
         </dependency>
 
         <dependency>
             <groupId>com.alibaba</groupId>
             <artifactId>dubbo-common</artifactId>
             <version>${dubbo.version}</version>
+            <optional>true</optional>
         </dependency>
 
         <dependency>

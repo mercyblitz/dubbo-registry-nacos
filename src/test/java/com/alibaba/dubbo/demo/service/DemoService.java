@@ -16,8 +16,6 @@
  */
 package com.alibaba.dubbo.demo.service;
 
-import com.alibaba.dubbo.demo.Box;
-
 /**
  * DemoService
  *
@@ -26,7 +24,5 @@ import com.alibaba.dubbo.demo.Box;
 public interface DemoService {
 
     String sayName(String name);
-
-    Box getBox();
 
 }

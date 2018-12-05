@@ -34,8 +34,8 @@ import com.alibaba.nacos.api.naming.pojo.Instance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -49,6 +49,13 @@ import java.util.concurrent.ConcurrentMap;
  */
 public class NacosRegistry extends FailbackRegistry {
 
+    private static final String[] ALL_CATEGORIES = of(
+            Constants.PROVIDERS_CATEGORY,
+            Constants.CONSUMERS_CATEGORY,
+            Constants.ROUTERS_CATEGORY,
+            Constants.CONFIGURATORS_CATEGORY
+    );
+
     private final Logger logger = LoggerFactory.getLogger(getClass());
 
     private final NamingService namingService;
@@ -61,6 +68,27 @@ public class NacosRegistry extends FailbackRegistry {
         this.nacosListeners = new ConcurrentHashMap<String, EventListener>();
     }
 
+    @Override
+    public boolean isAvailable() {
+        return "UP".equals(namingService.getServerStatus());
+    }
+
+    @Override
+    public List<URL> lookup(final URL url) {
+        final List<URL> urls = new LinkedList<URL>();
+        execute(new NamingServiceCallback() {
+            @Override
+            public void callback(NamingService namingService) throws NacosException {
+                List<String> serviceNames = getServiceNames(url);
+                for (String serviceName : serviceNames) {
+                    List<Instance> instances = namingService.getAllInstances(serviceName);
+                    urls.addAll(buildURLs(url, instances));
+                }
+            }
+        });
+        return urls;
+    }
+
     protected void doRegister(URL url) {
         final String serviceName = getServiceName(url);
         final Instance instance = createInstance(url);
@@ -71,47 +99,54 @@ public class NacosRegistry extends FailbackRegistry {
         });
     }
 
-    protected void doUnregister(URL url) {
-        final String serviceName = getServiceName(url);
-        final Instance instance = createInstance(url);
+    protected void doUnregister(final URL url) {
         execute(new NamingServiceCallback() {
             public void callback(NamingService namingService) throws NacosException {
+                String serviceName = getServiceName(url);
+                Instance instance = createInstance(url);
                 namingService.deregisterInstance(serviceName, instance.getIp(), instance.getPort());
             }
         });
     }
 
     protected void doSubscribe(final URL url, final NotifyListener listener) {
-
-        if (Constants.ANY_VALUE.equals(url.getServiceInterface())) { // For Production-Ready
-
-            // TODO
-
-        } else {
-
-            final String serviceName = getProviderServiceName(url);
-
-            execute(new NamingServiceCallback() {
-                @Override
-                public void callback(NamingService namingService) throws NacosException {
-
+        execute(new NamingServiceCallback() {
+            @Override
+            public void callback(NamingService namingService) throws NacosException {
+                List<String> serviceNames = getServiceNames(url);
+                for (String serviceName : serviceNames) {
                     List<Instance> instances = namingService.getAllInstances(serviceName);
-
-                    List<URL> providerURLs = buildURLs(url, instances);
-
-                    NacosRegistry.this.notify(url, listener, providerURLs);
-
+                    List<URL> urls = buildURLs(url, instances);
+                    NacosRegistry.this.notify(url, listener, urls);
                     subscribeEventListener(serviceName, url, listener);
-
                 }
-            });
-        }
-
+            }
+        });
     }
 
     @Override
     protected void doUnsubscribe(URL url, NotifyListener listener) {
+    }
 
+    private List<String> getServiceNames(URL url) {
+        String[] categories = getCategories(url);
+        List<String> serviceNames = new ArrayList<String>(categories.length);
+        for (String category : categories) {
+            final String serviceName = getServiceName(url, category);
+            serviceNames.add(serviceName);
+        }
+        return serviceNames;
+    }
+
+    private List<URL> buildURLs(URL consumerURL, Collection<Instance> instances) {
+        List<URL> urls = new LinkedList<URL>();
+        for (Instance instance : instances) {
+            URL providerURL = buildURL(consumerURL, instance);
+            if (UrlUtils.isMatch(consumerURL, providerURL)) {
+                urls.add(providerURL);
+            }
+        }
+        return urls;
     }
 
     private void subscribeEventListener(String serviceName, final URL url, final NotifyListener listener)
@@ -132,36 +167,22 @@ public class NacosRegistry extends FailbackRegistry {
         }
     }
 
-    public List<URL> lookup(URL url) {
-        final String serviceName = getServiceName(url);
-        List<Instance> instances = Collections.emptyList();
-        try {
-            instances = namingService.getAllInstances(serviceName);
-        } catch (NacosException e) {
-            if (logger.isErrorEnabled()) {
-                logger.error(e.getErrMsg(), e);
-            }
-        }
-        return buildURLs(url, instances);
-    }
-
-    private List<URL> buildURLs(URL consumerURL, Collection<Instance> instances) {
-        List<URL> urls = new LinkedList<URL>();
-        for (Instance instance : instances) {
-            URL providerURL = buildURL(consumerURL, instance);
-            if (UrlUtils.isMatch(consumerURL, providerURL)) {
-                urls.add(providerURL);
-            }
-        }
-        return urls;
-    }
-
-    public boolean isAvailable() {
-        return "UP".equals(namingService.getServerStatus());
+    /**
+     * Get the categories from {@link URL}
+     *
+     * @param url {@link URL}
+     * @return non-null array
+     */
+    private String[] getCategories(URL url) {
+        return Constants.ANY_VALUE.equals(url.getServiceInterface()) ?
+                ALL_CATEGORIES : of(Constants.DEFAULT_CATEGORY);
     }
 
     private URL buildURL(URL consumerURL, Instance instance) {
-        URL url = new URL(instance.getMetadata().get(Constants.PROTOCOL_KEY), instance.getIp(), instance.getPort(), instance.getMetadata());
+        URL url = new URL(instance.getMetadata().get(Constants.PROTOCOL_KEY),
+                instance.getIp(),
+                instance.getPort(),
+                instance.getMetadata());
         return url;
     }
 
@@ -182,10 +203,6 @@ public class NacosRegistry extends FailbackRegistry {
     private String getServiceName(URL url) {
         String category = url.getParameter(Constants.CATEGORY_KEY, Constants.DEFAULT_CATEGORY);
         return getServiceName(url, category);
-    }
-
-    private String getProviderServiceName(URL url) {
-        return getServiceName(url, Constants.PROVIDERS_CATEGORY);
     }
 
     private String getServiceName(URL url, String category) {
@@ -217,5 +234,9 @@ public class NacosRegistry extends FailbackRegistry {
 
         void callback(NamingService namingService) throws NacosException;
 
+    }
+
+    private static <T> T[] of(T... values) {
+        return values;
     }
 }

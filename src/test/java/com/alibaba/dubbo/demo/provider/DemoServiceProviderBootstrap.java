@@ -14,38 +14,28 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.alibaba.dubbo.demo.bootstrap;
+package com.alibaba.dubbo.demo.provider;
 
-import com.alibaba.dubbo.config.annotation.Reference;
 import com.alibaba.dubbo.config.spring.context.annotation.EnableDubbo;
 import com.alibaba.dubbo.demo.service.DemoService;
 
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.PropertySource;
 
-import javax.annotation.PostConstruct;
 import java.io.IOException;
 
 /**
- * {@link DemoService} consumer demo
+ * {@link DemoService} provider demo
  */
-@EnableDubbo
-@PropertySource(value = "provider-config.properties")
-public class DemoServiceConsumerDemo {
-
-    @Reference(version = "${demo.service.version}")
-    private DemoService demoService;
-
-    @PostConstruct
-    public void init() {
-        for (int i = 0; i < 10; i++) {
-            System.out.println(demoService.sayName("Mercy"));
-        }
-    }
+@EnableDubbo(scanBasePackages = "com.alibaba.dubbo.demo.service")
+@PropertySource(value = "classpath:/provider-config.properties")
+public class DemoServiceProviderBootstrap {
 
     public static void main(String[] args) throws IOException {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
-        context.register(DemoServiceConsumerDemo.class);
+        context.register(DemoServiceProviderBootstrap.class);
         context.refresh();
+        System.out.println("DemoService provider starting...");
+        System.in.read();
     }
 }

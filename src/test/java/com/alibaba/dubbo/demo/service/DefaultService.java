@@ -17,7 +17,7 @@
 package com.alibaba.dubbo.demo.service;
 
 import com.alibaba.dubbo.config.annotation.Service;
-import com.alibaba.dubbo.demo.Box;
+import com.alibaba.dubbo.rpc.RpcContext;
 
 import org.springframework.beans.factory.annotation.Value;
 
@@ -30,17 +30,16 @@ import org.springframework.beans.factory.annotation.Value;
 @Service(version = "${demo.service.version}")
 public class DefaultService implements DemoService {
 
-    @Value("${dubbo.protocol.port}")
-    private int port;
-
     @Value("${demo.service.name}")
     private String serviceName;
 
     public String sayName(String name) {
-        return String.format("Service [name :%s , port : %d] Say : %s", serviceName, port, name);
-    }
-
-    public Box getBox() {
-        return null;
+        RpcContext rpcContext = RpcContext.getContext();
+        return String.format("Service [name :%s , port : %d] %s(\"%s\") : Hello,%s",
+                serviceName,
+                rpcContext.getLocalPort(),
+                rpcContext.getMethodName(),
+                name,
+                name);
     }
 }
