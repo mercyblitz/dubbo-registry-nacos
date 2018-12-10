@@ -463,7 +463,7 @@ public class NacosRegistry extends FailbackRegistry {
         filterData(instances, new NacosDataFilter<Instance>() {
             @Override
             public boolean accept(Instance data) {
-                return !data.isEnabled();
+                return data.isEnabled();
             }
         });
     }
