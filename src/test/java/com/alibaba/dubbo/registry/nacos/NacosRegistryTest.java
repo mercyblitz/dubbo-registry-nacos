@@ -22,4 +22,11 @@ package com.alibaba.dubbo.registry.nacos;
  * @since 2.6.5
  */
 public class NacosRegistryTest {
+
+    // Test case Dubbo OPS :
+    // URL : admin://30.5.124.12?category=providers,consumers,routers,configurators&check=false&classifier=*&enabled=*&group=*&interface=*&version=*
+    public void testDoSubscribeForDubboOps() {
+
+    }
+
 }

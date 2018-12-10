@@ -19,7 +19,6 @@ package com.alibaba.dubbo.registry.nacos;
 import com.alibaba.dubbo.common.Constants;
 import com.alibaba.dubbo.common.URL;
 import com.alibaba.dubbo.common.utils.NetUtils;
-import com.alibaba.dubbo.common.utils.StringUtils;
 import com.alibaba.dubbo.common.utils.UrlUtils;
 import com.alibaba.dubbo.registry.NotifyListener;
 import com.alibaba.dubbo.registry.Registry;
@@ -30,7 +29,10 @@ import com.alibaba.nacos.api.naming.listener.Event;
 import com.alibaba.nacos.api.naming.listener.EventListener;
 import com.alibaba.nacos.api.naming.listener.NamingEvent;
 import com.alibaba.nacos.api.naming.pojo.Instance;
+import com.alibaba.nacos.api.naming.pojo.ListView;
 
+import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,6 +40,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -50,12 +53,32 @@ import java.util.concurrent.ConcurrentMap;
  */
 public class NacosRegistry extends FailbackRegistry {
 
+    /**
+     * The pagination size of query for Nacos service names
+     */
+    private static final int PAGINATION_SIZE = Integer.getInteger("nacos.service.names.pagination.size", 100);
+
+    /**
+     * The separator for service name
+     */
+    private static final String SERVICE_NAME_SEPARATOR = ":";
+
     private static final String[] ALL_CATEGORIES = of(
             Constants.PROVIDERS_CATEGORY,
             Constants.CONSUMERS_CATEGORY,
             Constants.ROUTERS_CATEGORY,
             Constants.CONFIGURATORS_CATEGORY
     );
+
+    private static final int CATEGORY_INDEX = 0;
+
+    private static final int SERVICE_INTERFACE_INDEX = 1;
+
+    private static final int SERVICE_VERSION_INDEX = 2;
+
+    private static final int SERVICE_GROUP_INDEX = 3;
+
+    private static final String WILDCARD = "*";
 
     private final Logger logger = LoggerFactory.getLogger(getClass());
 
@@ -117,7 +140,7 @@ public class NacosRegistry extends FailbackRegistry {
                 List<String> serviceNames = getServiceNames(url);
                 for (String serviceName : serviceNames) {
                     List<Instance> instances = namingService.getAllInstances(serviceName);
-                    NacosRegistry.this.notify(url, listener, instances);
+                    notifySubscriber(url, listener, instances);
                     subscribeEventListener(serviceName, url, listener);
                 }
             }
@@ -128,7 +151,104 @@ public class NacosRegistry extends FailbackRegistry {
     protected void doUnsubscribe(URL url, NotifyListener listener) {
     }
 
-    private List<String> getServiceNames(URL url) {
+    /**
+     * Get the service names from the specified {@link URL url}
+     *
+     * @param url {@link URL}
+     * @return non-null
+     * @throws NacosException
+     */
+    private List<String> getServiceNames(URL url) throws NacosException {
+
+        String protocol = url.getProtocol();
+
+        if (Constants.ADMIN_PROTOCOL.equals(protocol)) {
+            return getServiceNamesForOps(url);
+        } else {
+            return doGetServiceNames(url);
+        }
+    }
+
+    /**
+     * Get the service names for Dubbo OPS
+     *
+     * @param url {@link URL}
+     * @return non-null
+     * @throws NacosException
+     */
+    private List<String> getServiceNamesForOps(URL url) throws NacosException {
+        int pageIndex = 1;
+        ListView<String> listView = namingService.getServicesOfServer(pageIndex, PAGINATION_SIZE);
+        // Append first page into list
+        List<String> serviceNames = new LinkedList<String>(listView.getData());
+        // the total count
+        int count = listView.getCount();
+        // the number of pages
+        int pageNumbers = count / PAGINATION_SIZE;
+        // If more than 1 page
+        for (int i = 0; i < pageNumbers; i++) {
+            listView = namingService.getServicesOfServer(++pageIndex, PAGINATION_SIZE);
+            serviceNames.addAll(listView.getData());
+        }
+
+        // filter matched service names
+        filterMatchedServiceNames(serviceNames, url);
+
+        return serviceNames;
+    }
+
+    private void filterMatchedServiceNames(List<String> serviceNames, URL url) {
+
+        String[] categories = getCategories(url);
+
+        String targetServiceInterface = url.getServiceInterface();
+
+        String targetVersion = url.getParameter(Constants.VERSION_KEY);
+
+        String targetGroup = url.getParameter(Constants.GROUP_KEY);
+
+        Iterator<String> iterator = serviceNames.iterator();
+
+        while (iterator.hasNext()) {
+            // service name -> providers:*:*:*
+            String serviceName = iterator.next();
+            // split service name to segments
+            // (required) segments[0] = category
+            // (required) segments[1] = serviceInterface
+            // (required) segments[2] = version
+            // (optional) segments[3] = group
+            String[] segments = StringUtils.split(serviceName, SERVICE_NAME_SEPARATOR);
+            int length = segments.length;
+            if (length < 3) { // must present 3 segments or more
+                continue;
+            }
+
+            String category = segments[CATEGORY_INDEX];
+            if (!ArrayUtils.contains(categories, category)) { // no match category
+                iterator.remove();
+            }
+
+            String serviceInterface = segments[SERVICE_INTERFACE_INDEX];
+            if (!WILDCARD.equals(targetServiceInterface) &&
+                    !StringUtils.equals(targetServiceInterface, serviceInterface)) { // no match service interface
+                iterator.remove();
+            }
+
+            String version = segments[SERVICE_VERSION_INDEX];
+            if (!WILDCARD.equals(targetVersion) &&
+                    !StringUtils.equals(targetVersion, version)) { // no match service version
+                iterator.remove();
+            }
+
+            String group = length > 3 ? segments[SERVICE_GROUP_INDEX] : null;
+            if (group != null && !WILDCARD.equals(targetGroup)
+                    && !StringUtils.equals(targetGroup, group)) {  // no match service group
+                iterator.remove();
+            }
+        }
+    }
+
+    private List<String> doGetServiceNames(URL url) {
         String[] categories = getCategories(url);
         List<String> serviceNames = new ArrayList<String>(categories.length);
         for (String category : categories) {
@@ -144,9 +264,9 @@ public class NacosRegistry extends FailbackRegistry {
         }
         List<URL> urls = new LinkedList<URL>();
         for (Instance instance : instances) {
-            URL providerURL = buildURL(consumerURL, instance);
-            if (UrlUtils.isMatch(consumerURL, providerURL)) {
-                urls.add(providerURL);
+            URL url = buildURL(instance);
+            if (UrlUtils.isMatch(consumerURL, url)) {
+                urls.add(url);
             }
         }
         return urls;
@@ -159,7 +279,7 @@ public class NacosRegistry extends FailbackRegistry {
                 public void onEvent(Event event) {
                     if (event instanceof NamingEvent) {
                         NamingEvent e = (NamingEvent) event;
-                        NacosRegistry.this.notify(url, listener, e.getInstances());
+                        notifySubscriber(url, listener, e.getInstances());
                     }
                 }
             };
@@ -168,7 +288,14 @@ public class NacosRegistry extends FailbackRegistry {
         }
     }
 
-    private void notify(URL url, NotifyListener listener, Collection<Instance> instances) {
+    /**
+     * Notify the Healthy {@link Instance instances} to subscriber.
+     *
+     * @param url       {@link URL}
+     * @param listener  {@link NotifyListener}
+     * @param instances all {@link Instance instances}
+     */
+    private void notifySubscriber(URL url, NotifyListener listener, Collection<Instance> instances) {
         List<Instance> healthyInstances = filterHealthyInstances(instances);
         if (!healthyInstances.isEmpty()) {
             List<URL> providerURLs = buildURLs(url, instances);
@@ -187,7 +314,7 @@ public class NacosRegistry extends FailbackRegistry {
                 ALL_CATEGORIES : of(Constants.DEFAULT_CATEGORY);
     }
 
-    private URL buildURL(URL consumerURL, Instance instance) {
+    private URL buildURL(Instance instance) {
         URL url = new URL(instance.getMetadata().get(Constants.PROTOCOL_KEY),
                 instance.getIp(),
                 instance.getPort(),
@@ -225,7 +352,7 @@ public class NacosRegistry extends FailbackRegistry {
     private void appendIfPresent(StringBuilder target, URL url, String parameterName) {
         String parameterValue = url.getParameter(parameterName);
         if (!StringUtils.isBlank(parameterValue)) {
-            target.append(":").append(parameterValue);
+            target.append(SERVICE_NAME_SEPARATOR).append(parameterValue);
         }
     }
 
