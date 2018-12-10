@@ -45,6 +45,14 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
+import static com.alibaba.dubbo.common.Constants.CONFIGURATORS_CATEGORY;
+import static com.alibaba.dubbo.common.Constants.CONSUMERS_CATEGORY;
+import static com.alibaba.dubbo.common.Constants.PROVIDERS_CATEGORY;
+import static com.alibaba.dubbo.common.Constants.ROUTERS_CATEGORY;
 
 /**
  * Nacos {@link Registry}
@@ -54,20 +62,18 @@ import java.util.concurrent.ConcurrentMap;
 public class NacosRegistry extends FailbackRegistry {
 
     /**
-     * The pagination size of query for Nacos service names
-     */
-    private static final int PAGINATION_SIZE = Integer.getInteger("nacos.service.names.pagination.size", 100);
-
-    /**
      * The separator for service name
      */
     private static final String SERVICE_NAME_SEPARATOR = ":";
 
-    private static final String[] ALL_CATEGORIES = of(
-            Constants.PROVIDERS_CATEGORY,
-            Constants.CONSUMERS_CATEGORY,
-            Constants.ROUTERS_CATEGORY,
-            Constants.CONFIGURATORS_CATEGORY
+    /**
+     * All supported categories
+     */
+    private static final String[] ALL_SUPPORTED_CATEGORIES = of(
+            PROVIDERS_CATEGORY,
+            CONSUMERS_CATEGORY,
+            ROUTERS_CATEGORY,
+            CONFIGURATORS_CATEGORY
     );
 
     private static final int CATEGORY_INDEX = 0;
@@ -79,6 +85,21 @@ public class NacosRegistry extends FailbackRegistry {
     private static final int SERVICE_GROUP_INDEX = 3;
 
     private static final String WILDCARD = "*";
+
+    /**
+     * The pagination size of query for Nacos service names
+     */
+    private static final int PAGINATION_SIZE = Integer.getInteger("nacos.service.names.pagination.size", 100);
+
+    /**
+     * The interval in second of lookup Nacos service names(only for Dubbo-OPS)
+     */
+    private static final long LOOKUP_INTERVAL = Long.getLong("nacos.service.names.lookup.interval", 30);
+
+    /**
+     * {@link ScheduledExecutorService}
+     */
+    private volatile ScheduledExecutorService scheduledExecutorService;
 
     private final Logger logger = LoggerFactory.getLogger(getClass());
 
@@ -103,7 +124,7 @@ public class NacosRegistry extends FailbackRegistry {
         execute(new NamingServiceCallback() {
             @Override
             public void callback(NamingService namingService) throws NacosException {
-                List<String> serviceNames = getServiceNames(url);
+                List<String> serviceNames = getServiceNames(url, null);
                 for (String serviceName : serviceNames) {
                     List<Instance> instances = namingService.getAllInstances(serviceName);
                     urls.addAll(buildURLs(url, instances));
@@ -134,10 +155,14 @@ public class NacosRegistry extends FailbackRegistry {
     }
 
     protected void doSubscribe(final URL url, final NotifyListener listener) {
+        List<String> serviceNames = getServiceNames(url, listener);
+        doSubscribe(url, listener, serviceNames);
+    }
+
+    private void doSubscribe(final URL url, final NotifyListener listener, final List<String> serviceNames) {
         execute(new NamingServiceCallback() {
             @Override
             public void callback(NamingService namingService) throws NacosException {
-                List<String> serviceNames = getServiceNames(url);
                 for (String serviceName : serviceNames) {
                     List<Instance> instances = namingService.getAllInstances(serviceName);
                     notifySubscriber(url, listener, instances);
@@ -149,23 +174,61 @@ public class NacosRegistry extends FailbackRegistry {
 
     @Override
     protected void doUnsubscribe(URL url, NotifyListener listener) {
+        if (isAdminProtocol(url)) {
+            shutdownServiceNamesLookup();
+        }
+    }
+
+    private void shutdownServiceNamesLookup() {
+        if (scheduledExecutorService != null) {
+            scheduledExecutorService.shutdown();
+        }
     }
 
     /**
      * Get the service names from the specified {@link URL url}
      *
-     * @param url {@link URL}
+     * @param url      {@link URL}
+     * @param listener {@link NotifyListener}
      * @return non-null
-     * @throws NacosException
      */
-    private List<String> getServiceNames(URL url) throws NacosException {
-
-        String protocol = url.getProtocol();
-
-        if (Constants.ADMIN_PROTOCOL.equals(protocol)) {
+    private List<String> getServiceNames(URL url, NotifyListener listener) {
+        if (isAdminProtocol(url)) {
+            scheduleServiceNamesLookup(url, listener);
             return getServiceNamesForOps(url);
         } else {
             return doGetServiceNames(url);
+        }
+    }
+
+    private boolean isAdminProtocol(URL url) {
+        return Constants.ADMIN_PROTOCOL.equals(url.getProtocol());
+    }
+
+    private void scheduleServiceNamesLookup(final URL url, final NotifyListener listener) {
+        if (scheduledExecutorService == null) {
+            scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
+            scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
+                @Override
+                public void run() {
+                    List<String> serviceNames = getAllServiceNames();
+                    filterData(serviceNames, new NacosDataFilter<String>() {
+                        @Override
+                        public boolean accept(String serviceName) {
+                            boolean accepted = false;
+                            for (String category : ALL_SUPPORTED_CATEGORIES) {
+                                String prefix = category + SERVICE_NAME_SEPARATOR;
+                                if (StringUtils.startsWith(serviceName, prefix)) {
+                                    accepted = true;
+                                    break;
+                                }
+                            }
+                            return accepted;
+                        }
+                    });
+                    doSubscribe(url, listener, serviceNames);
+                }
+            }, LOOKUP_INTERVAL, LOOKUP_INTERVAL, TimeUnit.SECONDS);
         }
     }
 
@@ -174,75 +237,105 @@ public class NacosRegistry extends FailbackRegistry {
      *
      * @param url {@link URL}
      * @return non-null
-     * @throws NacosException
      */
-    private List<String> getServiceNamesForOps(URL url) throws NacosException {
-        int pageIndex = 1;
-        ListView<String> listView = namingService.getServicesOfServer(pageIndex, PAGINATION_SIZE);
-        // Append first page into list
-        List<String> serviceNames = new LinkedList<String>(listView.getData());
-        // the total count
-        int count = listView.getCount();
-        // the number of pages
-        int pageNumbers = count / PAGINATION_SIZE;
-        // If more than 1 page
-        for (int i = 0; i < pageNumbers; i++) {
-            listView = namingService.getServicesOfServer(++pageIndex, PAGINATION_SIZE);
-            serviceNames.addAll(listView.getData());
-        }
+    private List<String> getServiceNamesForOps(URL url) {
+        List<String> serviceNames = getAllServiceNames();
+        filterServiceNames(serviceNames, url);
+        return serviceNames;
+    }
 
-        // filter matched service names
-        filterMatchedServiceNames(serviceNames, url);
+    private List<String> getAllServiceNames() {
+
+        final List<String> serviceNames = new LinkedList<String>();
+
+        execute(new NamingServiceCallback() {
+            @Override
+            public void callback(NamingService namingService) throws NacosException {
+
+                int pageIndex = 1;
+                ListView<String> listView = namingService.getServicesOfServer(pageIndex, PAGINATION_SIZE);
+                // First page data
+                List<String> firstPageData = listView.getData();
+                // Append first page into list
+                serviceNames.addAll(firstPageData);
+                // the total count
+                int count = listView.getCount();
+                // the number of pages
+                int pageNumbers = count / PAGINATION_SIZE;
+                int remainder = count % PAGINATION_SIZE;
+                // remain
+                if (remainder > 0) {
+                    pageNumbers += 1;
+                }
+                // If more than 1 page
+                while (pageIndex < pageNumbers) {
+                    listView = namingService.getServicesOfServer(++pageIndex, PAGINATION_SIZE);
+                    serviceNames.addAll(listView.getData());
+                }
+
+            }
+        });
 
         return serviceNames;
     }
 
-    private void filterMatchedServiceNames(List<String> serviceNames, URL url) {
+    private void filterServiceNames(List<String> serviceNames, URL url) {
 
-        String[] categories = getCategories(url);
+        final String[] categories = getCategories(url);
 
-        String targetServiceInterface = url.getServiceInterface();
+        final String targetServiceInterface = url.getServiceInterface();
 
-        String targetVersion = url.getParameter(Constants.VERSION_KEY);
+        final String targetVersion = url.getParameter(Constants.VERSION_KEY);
 
-        String targetGroup = url.getParameter(Constants.GROUP_KEY);
+        final String targetGroup = url.getParameter(Constants.GROUP_KEY);
 
-        Iterator<String> iterator = serviceNames.iterator();
+        filterData(serviceNames, new NacosDataFilter<String>() {
+            @Override
+            public boolean accept(String serviceName) {
+                // split service name to segments
+                // (required) segments[0] = category
+                // (required) segments[1] = serviceInterface
+                // (required) segments[2] = version
+                // (optional) segments[3] = group
+                String[] segments = StringUtils.split(serviceName, SERVICE_NAME_SEPARATOR);
+                int length = segments.length;
+                if (length < 3) { // must present 3 segments or more
+                    return false;
+                }
 
+                String category = segments[CATEGORY_INDEX];
+                if (!ArrayUtils.contains(categories, category)) { // no match category
+                    return false;
+                }
+
+                String serviceInterface = segments[SERVICE_INTERFACE_INDEX];
+                if (!WILDCARD.equals(targetServiceInterface) &&
+                        !StringUtils.equals(targetServiceInterface, serviceInterface)) { // no match service interface
+                    return false;
+                }
+
+                String version = segments[SERVICE_VERSION_INDEX];
+                if (!WILDCARD.equals(targetVersion) &&
+                        !StringUtils.equals(targetVersion, version)) { // no match service version
+                    return false;
+                }
+
+                String group = length > 3 ? segments[SERVICE_GROUP_INDEX] : null;
+                if (group != null && !WILDCARD.equals(targetGroup)
+                        && !StringUtils.equals(targetGroup, group)) {  // no match service group
+                    return false;
+                }
+
+                return true;
+            }
+        });
+    }
+
+    private <T> void filterData(Collection<T> collection, NacosDataFilter<T> filter) {
+        Iterator<T> iterator = collection.iterator();
         while (iterator.hasNext()) {
-            // service name -> providers:*:*:*
-            String serviceName = iterator.next();
-            // split service name to segments
-            // (required) segments[0] = category
-            // (required) segments[1] = serviceInterface
-            // (required) segments[2] = version
-            // (optional) segments[3] = group
-            String[] segments = StringUtils.split(serviceName, SERVICE_NAME_SEPARATOR);
-            int length = segments.length;
-            if (length < 3) { // must present 3 segments or more
-                continue;
-            }
-
-            String category = segments[CATEGORY_INDEX];
-            if (!ArrayUtils.contains(categories, category)) { // no match category
-                iterator.remove();
-            }
-
-            String serviceInterface = segments[SERVICE_INTERFACE_INDEX];
-            if (!WILDCARD.equals(targetServiceInterface) &&
-                    !StringUtils.equals(targetServiceInterface, serviceInterface)) { // no match service interface
-                iterator.remove();
-            }
-
-            String version = segments[SERVICE_VERSION_INDEX];
-            if (!WILDCARD.equals(targetVersion) &&
-                    !StringUtils.equals(targetVersion, version)) { // no match service version
-                iterator.remove();
-            }
-
-            String group = length > 3 ? segments[SERVICE_GROUP_INDEX] : null;
-            if (group != null && !WILDCARD.equals(targetGroup)
-                    && !StringUtils.equals(targetGroup, group)) {  // no match service group
+            T data = iterator.next();
+            if (!filter.accept(data)) { // remove if not accept
                 iterator.remove();
             }
         }
@@ -296,11 +389,11 @@ public class NacosRegistry extends FailbackRegistry {
      * @param instances all {@link Instance instances}
      */
     private void notifySubscriber(URL url, NotifyListener listener, Collection<Instance> instances) {
-        List<Instance> healthyInstances = filterHealthyInstances(instances);
-        if (!healthyInstances.isEmpty()) {
-            List<URL> providerURLs = buildURLs(url, instances);
-            NacosRegistry.this.notify(url, listener, providerURLs);
-        }
+        List<Instance> healthyInstances = new LinkedList<Instance>(instances);
+        // Healthy Instances
+        filterHealthyInstances(instances);
+        List<URL> urls = buildURLs(url, healthyInstances);
+        NacosRegistry.this.notify(url, listener, urls);
     }
 
     /**
@@ -311,7 +404,7 @@ public class NacosRegistry extends FailbackRegistry {
      */
     private String[] getCategories(URL url) {
         return Constants.ANY_VALUE.equals(url.getServiceInterface()) ?
-                ALL_CATEGORIES : of(Constants.DEFAULT_CATEGORY);
+                ALL_SUPPORTED_CATEGORIES : of(Constants.DEFAULT_CATEGORY);
     }
 
     private URL buildURL(Instance instance) {
@@ -366,28 +459,52 @@ public class NacosRegistry extends FailbackRegistry {
         }
     }
 
-    private List<Instance> filterHealthyInstances(Collection<Instance> instances) {
-        if (instances.isEmpty()) {
-            return Collections.emptyList();
-        }
-        // Healthy Instances
-        List<Instance> healthyInstances = new LinkedList<Instance>();
-        for (Instance instance : instances) {
-            if (instance.isEnabled()) {
-                healthyInstances.add(instance);
+    private void filterHealthyInstances(Collection<Instance> instances) {
+        filterData(instances, new NacosDataFilter<Instance>() {
+            @Override
+            public boolean accept(Instance data) {
+                return !data.isEnabled();
             }
-        }
-        return healthyInstances;
-    }
-
-
-    private interface NamingServiceCallback {
-
-        void callback(NamingService namingService) throws NacosException;
-
+        });
     }
 
     private static <T> T[] of(T... values) {
         return values;
+    }
+
+
+    /**
+     * A filter for Nacos data
+     *
+     * @since 2.6.5
+     */
+    private interface NacosDataFilter<T> {
+
+        /**
+         * Tests whether or not the specified data should be accepted.
+         *
+         * @param data The data to be tested
+         * @return <code>true</code> if and only if <code>data</code>
+         * should be accepted
+         */
+        boolean accept(T data);
+
+    }
+
+    /**
+     * {@link NamingService} Callback
+     *
+     * @since 2.6.5
+     */
+    interface NamingServiceCallback {
+
+        /**
+         * Callback
+         *
+         * @param namingService {@link NamingService}
+         * @throws NacosException
+         */
+        void callback(NamingService namingService) throws NacosException;
+
     }
 }
