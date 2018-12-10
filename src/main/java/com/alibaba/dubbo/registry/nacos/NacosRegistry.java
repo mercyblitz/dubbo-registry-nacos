@@ -90,18 +90,22 @@ public class NacosRegistry extends FailbackRegistry {
         return urls;
     }
 
+    @Override
     protected void doRegister(URL url) {
         final String serviceName = getServiceName(url);
         final Instance instance = createInstance(url);
         execute(new NamingServiceCallback() {
+            @Override
             public void callback(NamingService namingService) throws NacosException {
                 namingService.registerInstance(serviceName, instance);
             }
         });
     }
 
+    @Override
     protected void doUnregister(final URL url) {
         execute(new NamingServiceCallback() {
+            @Override
             public void callback(NamingService namingService) throws NacosException {
                 String serviceName = getServiceName(url);
                 Instance instance = createInstance(url);
@@ -110,6 +114,7 @@ public class NacosRegistry extends FailbackRegistry {
         });
     }
 
+    @Override
     protected void doSubscribe(final URL url, final NotifyListener listener) {
         execute(new NamingServiceCallback() {
             @Override
@@ -156,6 +161,7 @@ public class NacosRegistry extends FailbackRegistry {
             throws NacosException {
         if (!nacosListeners.containsKey(serviceName)) {
             EventListener eventListener = new EventListener() {
+                @Override
                 public void onEvent(Event event) {
                     if (event instanceof NamingEvent) {
                         NamingEvent e = (NamingEvent) event;
@@ -225,7 +231,7 @@ public class NacosRegistry extends FailbackRegistry {
     private void appendIfPresent(StringBuilder target, URL url, String parameterName) {
         String parameterValue = url.getParameter(parameterName);
         if (!StringUtils.isBlank(parameterValue)) {
-            target.append(":").append(parameterValue);
+            target.append("-").append(parameterValue);
         }
     }
 
