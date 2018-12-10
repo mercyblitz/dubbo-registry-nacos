@@ -36,6 +36,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -116,8 +117,7 @@ public class NacosRegistry extends FailbackRegistry {
                 List<String> serviceNames = getServiceNames(url);
                 for (String serviceName : serviceNames) {
                     List<Instance> instances = namingService.getAllInstances(serviceName);
-                    List<URL> urls = buildURLs(url, instances);
-                    NacosRegistry.this.notify(url, listener, urls);
+                    NacosRegistry.this.notify(url, listener, instances);
                     subscribeEventListener(serviceName, url, listener);
                 }
             }
@@ -139,6 +139,9 @@ public class NacosRegistry extends FailbackRegistry {
     }
 
     private List<URL> buildURLs(URL consumerURL, Collection<Instance> instances) {
+        if (instances.isEmpty()) {
+            return Collections.emptyList();
+        }
         List<URL> urls = new LinkedList<URL>();
         for (Instance instance : instances) {
             URL providerURL = buildURL(consumerURL, instance);
@@ -156,14 +159,20 @@ public class NacosRegistry extends FailbackRegistry {
                 public void onEvent(Event event) {
                     if (event instanceof NamingEvent) {
                         NamingEvent e = (NamingEvent) event;
-                        List<Instance> instances = e.getInstances();
-                        List<URL> providerURLs = buildURLs(url, instances);
-                        NacosRegistry.this.notify(url, listener, providerURLs);
+                        NacosRegistry.this.notify(url, listener, e.getInstances());
                     }
                 }
             };
             namingService.subscribe(serviceName, eventListener);
             nacosListeners.put(serviceName, eventListener);
+        }
+    }
+
+    private void notify(URL url, NotifyListener listener, Collection<Instance> instances) {
+        List<Instance> healthyInstances = filterHealthyInstances(instances);
+        if (!healthyInstances.isEmpty()) {
+            List<URL> providerURLs = buildURLs(url, instances);
+            NacosRegistry.this.notify(url, listener, providerURLs);
         }
     }
 
@@ -229,6 +238,21 @@ public class NacosRegistry extends FailbackRegistry {
             }
         }
     }
+
+    private List<Instance> filterHealthyInstances(Collection<Instance> instances) {
+        if (instances.isEmpty()) {
+            return Collections.emptyList();
+        }
+        // Healthy Instances
+        List<Instance> healthyInstances = new LinkedList<Instance>();
+        for (Instance instance : instances) {
+            if (instance.isEnabled()) {
+                healthyInstances.add(instance);
+            }
+        }
+        return healthyInstances;
+    }
+
 
     private interface NamingServiceCallback {
 
