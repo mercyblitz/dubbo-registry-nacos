@@ -30,6 +30,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Properties;
 
+import static com.alibaba.dubbo.common.Constants.BACKUP_KEY;
 import static com.alibaba.nacos.api.PropertyKeyConst.ACCESS_KEY;
 import static com.alibaba.nacos.api.PropertyKeyConst.CLUSTER_NAME;
 import static com.alibaba.nacos.api.PropertyKeyConst.ENDPOINT;
@@ -77,6 +78,13 @@ public class NacosRegistryFactory extends AbstractRegistryFactory {
                 new StringBuilder(url.getHost()) // Host
                         .append(":")
                         .append(url.getPort()); // Port
+
+        // Append backup parameter as other servers
+        String backup = url.getParameter(BACKUP_KEY);
+        if (backup != null) {
+            serverAddrBuilder.append(",").append(backup);
+        }
+
         String serverAddr = serverAddrBuilder.toString();
         properties.put(SERVER_ADDR, serverAddr);
     }

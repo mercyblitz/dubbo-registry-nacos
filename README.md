@@ -44,8 +44,15 @@ start a Nacos server.
     <dependency>
         <groupId>com.alibaba</groupId>
         <artifactId>dubbo-registry-nacos</artifactId>
-        <version>0.0.1</version>
+        <version>0.0.2</version>
     </dependency>   
+    
+    <!-- Keep latest Nacos client version -->
+    <dependency>
+        <groupId>com.alibaba.nacos</groupId>
+        <artifactId>nacos-client</artifactId>
+        <version>[0.6.1,)</version>
+    </dependency>
     
     ...
     

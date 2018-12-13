@@ -11,7 +11,7 @@
 
     <groupId>com.alibaba</groupId>
     <artifactId>dubbo-registry-nacos</artifactId>
-    <version>0.0.1</version>
+    <version>0.0.2</version>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -20,7 +20,7 @@
         <maven.compiler.source>1.6</maven.compiler.source>
         <maven.compiler.target>1.6</maven.compiler.target>
         <dubbo.version>2.6.5</dubbo.version>
-        <nacos.version>0.6.0</nacos.version>
+        <nacos.version>0.6.1</nacos.version>
     </properties>
 
     <dependencies>
@@ -43,6 +43,7 @@
             <groupId>com.alibaba.nacos</groupId>
             <artifactId>nacos-client</artifactId>
             <version>${nacos.version}</version>
+            <optional>true</optional>
         </dependency>
 
         <!-- Test Libraries -->
