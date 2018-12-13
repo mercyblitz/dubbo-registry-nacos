@@ -16,41 +16,26 @@
  */
 package com.alibaba.dubbo.demo.consumer;
 
-import com.alibaba.dubbo.config.annotation.Reference;
-import com.alibaba.dubbo.config.spring.context.annotation.EnableDubbo;
 import com.alibaba.dubbo.demo.service.DemoService;
 
-import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.context.annotation.PropertySource;
+import org.springframework.context.support.ClassPathXmlApplicationContext;
 
-import javax.annotation.PostConstruct;
 import java.io.IOException;
-import java.util.concurrent.TimeUnit;
 
 /**
- * {@link DemoService} consumer demo
+ * {@link DemoService} consumer demo XML bootstrap
  */
-@EnableDubbo
-@PropertySource(value = "classpath:/consumer-config.properties")
-public class DemoServiceConsumerBootstrap {
-
-    @Reference(version = "${demo.service.version}")
-    private DemoService demoService;
-
-    @PostConstruct
-    public void init() throws InterruptedException {
-        for (int i = 0; i < 10; i++) {
-            for (int j = 0; j < 5; j++) {
-                System.out.println(demoService.sayName("小马哥（mercyblitz）"));
-            }
-            Thread.sleep(TimeUnit.SECONDS.toMillis(5));
-        }
-    }
+public class DemoServiceConsumerXmlBootstrap {
 
     public static void main(String[] args) throws IOException {
-        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
-        context.register(DemoServiceConsumerBootstrap.class);
+        ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext();
+        context.setConfigLocation("/META-INF/spring/dubbo-consumer-context.xml");
         context.refresh();
+        System.out.println("DemoService consumer (XML) is starting...");
+        DemoService demoService = context.getBean("demoService", DemoService.class);
+        for (int i = 0; i < 10; i++) {
+            System.out.println(demoService.sayName("小马哥（mercyblitz）"));
+        }
         System.in.read();
         context.close();
     }

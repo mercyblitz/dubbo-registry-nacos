@@ -16,26 +16,22 @@
  */
 package com.alibaba.dubbo.demo.provider;
 
-import com.alibaba.dubbo.config.spring.context.annotation.EnableDubbo;
 import com.alibaba.dubbo.demo.service.DemoService;
 
-import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.context.annotation.PropertySource;
+import org.springframework.context.support.ClassPathXmlApplicationContext;
 
 import java.io.IOException;
 
 /**
- * {@link DemoService} provider demo
+ * {@link DemoService} provider demo XML bootstrap
  */
-@EnableDubbo(scanBasePackages = "com.alibaba.dubbo.demo.service")
-@PropertySource(value = "classpath:/provider-config.properties")
-public class DemoServiceProviderBootstrap {
+public class DemoServiceProviderXmlBootstrap {
 
     public static void main(String[] args) throws IOException {
-        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
-        context.register(DemoServiceProviderBootstrap.class);
+        ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext();
+        context.setConfigLocation("/META-INF/spring/dubbo-provider-context.xml");
         context.refresh();
-        System.out.println("DemoService provider is starting...");
+        System.out.println("DemoService provider (XML) is starting...");
         System.in.read();
     }
 }
