@@ -57,14 +57,12 @@ import static com.alibaba.dubbo.common.Constants.ROUTERS_CATEGORY;
 /**
  * Nacos {@link Registry}
  *
+ * @see #SERVICE_NAME_SEPARATOR
+ * @see #PAGINATION_SIZE
+ * @see #LOOKUP_INTERVAL
  * @since 2.6.5
  */
 public class NacosRegistry extends FailbackRegistry {
-
-    /**
-     * The separator for service name
-     */
-    private static final String SERVICE_NAME_SEPARATOR = ":";
 
     /**
      * All supported categories
@@ -87,7 +85,15 @@ public class NacosRegistry extends FailbackRegistry {
     private static final String WILDCARD = "*";
 
     /**
-     * The pagination size of query for Nacos service names
+     * The separator for service name
+     *
+     * @revert change a constant to be configurable, it's designed for Windows file name that is compatible with old
+     * Nacos binary release(< 0.6.1)
+     */
+    private static final String SERVICE_NAME_SEPARATOR = System.getProperty("nacos.service.name.separator", ":");
+
+    /**
+     * The pagination size of query for Nacos service names(only for Dubbo-OPS)
      */
     private static final int PAGINATION_SIZE = Integer.getInteger("nacos.service.names.pagination.size", 100);
 
@@ -97,7 +103,7 @@ public class NacosRegistry extends FailbackRegistry {
     private static final long LOOKUP_INTERVAL = Long.getLong("nacos.service.names.lookup.interval", 30);
 
     /**
-     * {@link ScheduledExecutorService}
+     * {@link ScheduledExecutorService} lookup Nacos service names(only for Dubbo-OPS)
      */
     private volatile ScheduledExecutorService scheduledExecutorService;
 
@@ -391,7 +397,7 @@ public class NacosRegistry extends FailbackRegistry {
     private void notifySubscriber(URL url, NotifyListener listener, Collection<Instance> instances) {
         List<Instance> healthyInstances = new LinkedList<Instance>(instances);
         // Healthy Instances
-        filterHealthyInstances(instances);
+        filterHealthyInstances(healthyInstances);
         List<URL> urls = buildURLs(url, healthyInstances);
         NacosRegistry.this.notify(url, listener, urls);
     }
