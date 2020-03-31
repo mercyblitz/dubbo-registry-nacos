@@ -16,22 +16,26 @@
  */
 package com.alibaba.dubbo.registry.nacos;
 
-import org.apache.dubbo.common.URL;
-import org.apache.dubbo.registry.Registry;
+import org.apache.dubbo.common.extension.ExtensionFactory;
+import org.apache.dubbo.common.extension.ExtensionLoader;
+import org.apache.dubbo.common.lang.Prioritized;
 import org.apache.dubbo.registry.RegistryFactory;
-import org.apache.dubbo.registry.support.AbstractRegistryFactory;
 
-import static com.alibaba.dubbo.registry.nacos.util.NacosNamingServiceUtils.createNamingService;
+import static org.apache.dubbo.common.extension.ExtensionLoader.getExtensionLoader;
 
 /**
- * Nacos {@link RegistryFactory}
- *
- * @since 2.6.5
+ * Like a dummy implementation of Dubbo's {@link ExtensionFactory}, which will replace the "nacos" registry protocol
+ * from Apache Dubbo, instead of getting any instance of extension.
  */
-public class NacosRegistryFactory extends AbstractRegistryFactory {
+public class NacosExtensionFactory implements ExtensionFactory, Prioritized {
+
+    static {
+        ExtensionLoader<RegistryFactory> extensionLoader = getExtensionLoader(RegistryFactory.class);
+        extensionLoader.replaceExtension("nacos", NacosRegistryFactory.class);
+    }
 
     @Override
-    protected Registry createRegistry(URL url) {
-        return new NacosRegistry(url, createNamingService(url));
+    public <T> T getExtension(Class<T> type, String name) {
+        return null;
     }
 }

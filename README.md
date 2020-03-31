@@ -1,6 +1,6 @@
 # dubbo-registry-nacos
 
-`dubbo-registry-nacos` is a [Dubbo](https://github.com/apache/incubator-dubbo)'s registry implementation integrating with
+`dubbo-registry-nacos` is a [Dubbo](https://github.com/apache/dubbo)'s registry implementation integrating with
  [Nacos](https://github.com/alibaba/nacos) that is service registry server.  
 
 
@@ -35,16 +35,16 @@ start a Nacos server.
     
     <!-- Dubbo dependency -->
     <dependency>
-        <groupId>com.alibaba</groupId>
+        <groupId>org.apache.dubbo</groupId>
         <artifactId>dubbo</artifactId>
-        <version>2.6.5</version>
+        <version>[2.7.5,)</version>
     </dependency>
     
     <!-- Dubbo Nacos registry dependency -->
     <dependency>
         <groupId>com.alibaba</groupId>
         <artifactId>dubbo-registry-nacos</artifactId>
-        <version>0.0.2</version>
+        <version>2.7.6</version>
     </dependency>   
     
     <!-- Keep latest Nacos client version -->
@@ -186,3 +186,9 @@ public class DemoServiceConsumerBootstrap {
 ```
 
 See [`DemoServiceConsumerBootstrap.java`](src/test/java/com/alibaba/dubbo/demo/consumer/DemoServiceConsumerBootstrap.java) on GitHub.
+
+
+## Advanced
+
+
+

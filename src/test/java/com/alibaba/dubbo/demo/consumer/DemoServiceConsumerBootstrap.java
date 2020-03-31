@@ -16,10 +16,10 @@
  */
 package com.alibaba.dubbo.demo.consumer;
 
-import com.alibaba.dubbo.config.annotation.Reference;
-import com.alibaba.dubbo.config.spring.context.annotation.EnableDubbo;
-import com.alibaba.dubbo.demo.service.DemoService;
+import org.apache.dubbo.config.annotation.Reference;
+import org.apache.dubbo.config.spring.context.annotation.EnableDubbo;
 
+import com.alibaba.dubbo.demo.service.DemoService;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.PropertySource;
 
