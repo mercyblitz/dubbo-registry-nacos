@@ -27,12 +27,6 @@ start a Nacos server.
 
     ...
     
-    <dependency>
-       <groupId>org.springframework</groupId>
-       <artifactId>spring-context</artifactId>
-       <version>[3.2.18.RELEASE,)</version>
-   </dependency>
-    
     <!-- Dubbo dependency -->
     <dependency>
         <groupId>org.apache.dubbo</groupId>
@@ -51,7 +45,7 @@ start a Nacos server.
     <dependency>
         <groupId>com.alibaba.nacos</groupId>
         <artifactId>nacos-client</artifactId>
-        <version>[0.6.1,)</version>
+        <version>1.2.1</version>
     </dependency>
     
     ...
