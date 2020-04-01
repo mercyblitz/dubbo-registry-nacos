@@ -96,7 +96,7 @@ public class DefaultService implements DemoService {
 dubbo.application.name = dubbo-provider-demo
 
 ## Nacos registry address
-dubbo.registry.address = nacos://127.0.0.1:8848
+dubbo.registry.address = nacos://127.0.0.1:8848/?username=nacos&password=nacos
 
 ## Dubbo Protocol
 dubbo.protocol.name = dubbo
@@ -142,7 +142,7 @@ See [`DemoServiceProviderBootstrap.java`](src/test/java/com/alibaba/dubbo/demo/p
 dubbo.application.name = dubbo-consumer-demo
 
 ## Nacos registry address
-dubbo.registry.address = nacos://127.0.0.1:8848
+dubbo.registry.address = nacos://127.0.0.1:8848/?username=nacos&password=nacos
 
 # @Reference version
 demo.service.version= 1.0.0
