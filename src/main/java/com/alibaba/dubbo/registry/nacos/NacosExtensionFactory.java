@@ -27,6 +27,7 @@ import static org.apache.dubbo.common.extension.ExtensionLoader.getExtensionLoad
  * Like a dummy implementation of Dubbo's {@link ExtensionFactory}, which will replace the "nacos" registry protocol
  * from Apache Dubbo, instead of getting any instance of extension.
  */
+@Deprecated
 public class NacosExtensionFactory implements ExtensionFactory, Prioritized {
 
     static {
