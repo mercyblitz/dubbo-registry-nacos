@@ -24,7 +24,7 @@
         <revision>2.7.7</revision>
         <dubbo.version>${revision}</dubbo.version>
         <nacos.version>1.2.1</nacos.version>
-        <spring.framework.version>5.2.5.RELEASE</spring.framework.version>
+        <spring.framework.version>5.2.22.RELEASE</spring.framework.version>
     </properties>
 
     <dependencies>
